@@ -1,14 +1,28 @@
 // holds search query + results state for Home / Search Results screens
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/bus_model.dart';
 import '../services/firestore_service.dart';
 
+typedef BusSearcher = Stream<List<BusModel>> Function({
+  required String from,
+  required String to,
+});
+
 class SearchProvider extends ChangeNotifier {
-  final FirestoreService _firestoreService = FirestoreService();
+  // searchBuses is injectable so previews/tests can swap in mock data
+  // without needing Firebase.initializeApp() to have run.
+  SearchProvider({BusSearcher? searchBuses})
+    : _searchBuses = searchBuses ?? FirestoreService().streamBuses;
+
+  final BusSearcher _searchBuses;
+  StreamSubscription<List<BusModel>>? _subscription;
 
   String? _from;
   String? _to;
   DateTime? _travelDate;
+  int _passengers = 1;
+  bool _isRoundTrip = false;
   List<BusModel> _results = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -19,33 +33,45 @@ class SearchProvider extends ChangeNotifier {
   String? get from => _from;
   String? get to => _to;
   DateTime? get travelDate => _travelDate;
+  int get passengers => _passengers;
+  bool get isRoundTrip => _isRoundTrip;
   List<BusModel> get results => _results;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   List<String> get recentSearches => _recentSearches;
 
-  Future<void> search({
+  void search({
     required String from,
     required String to,
     DateTime? travelDate,
-  }) async {
+    int passengers = 1,
+    bool isRoundTrip = false,
+  }) {
     _from = from;
     _to = to;
     _travelDate = travelDate;
+    _passengers = passengers;
+    _isRoundTrip = isRoundTrip;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
-    try {
-      _results = await _firestoreService.searchBuses(from: from, to: to);
-      _addRecentSearch('$from → $to');
-    } catch (e) {
-      _errorMessage = e.toString();
-      _results = [];
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    _addRecentSearch('$from → $to');
+    _subscription?.cancel();
+    _subscription = _searchBuses(from: from, to: to).listen(
+      (results) {
+        _results = results;
+        _isLoading = false;
+        _errorMessage = null;
+        notifyListeners();
+      },
+      onError: (Object e) {
+        _errorMessage = e.toString();
+        _results = [];
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
   }
 
   void _addRecentSearch(String query) {
@@ -57,8 +83,21 @@ class SearchProvider extends ChangeNotifier {
   }
 
   void clearResults() {
+    _subscription?.cancel();
+    _subscription = null;
     _results = [];
     _errorMessage = null;
     notifyListeners();
+  }
+
+  void clearRecentSearches() {
+    _recentSearches.clear();
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 }

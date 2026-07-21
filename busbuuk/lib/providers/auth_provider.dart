@@ -5,27 +5,37 @@ import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final AuthService _authService = AuthService();
-  final FirestoreService _firestoreService = FirestoreService();
+  // late: constructing these touches Firebase.instance eagerly, so a
+  // provider built before Firebase.initializeApp() has run would crash
+  // immediately instead of only once it's actually used.
+  late final AuthService _authService = AuthService();
+  late final FirestoreService _firestoreService = FirestoreService();
 
   UserModel? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
 
+  // true until the very first authStateChanges event comes back, so the splash
+  // screen/router know whether we're still checking or actually logged out
+  bool _isInitializing = true;
+
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isLoggedIn => _currentUser != null;
+  bool get isInitializing => _isInitializing;
 
   AuthProvider() {
     // keep our own user profile in sync whenever firebase's auth state changes
     _authService.authStateChanges.listen((firebaseUser) async {
       if (firebaseUser == null) {
         _currentUser = null;
+        _isInitializing = false;
         notifyListeners();
         return;
       }
       _currentUser = await _firestoreService.getUserProfile(firebaseUser.uid);
+      _isInitializing = false;
       notifyListeners();
     });
   }
@@ -81,6 +91,51 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  Future<bool> updateProfileImage(String base64Image) async {
+    final user = _currentUser;
+    if (user == null) return false;
+
+    try {
+      await _firestoreService.updateProfileImage(user.uid, base64Image);
+      _currentUser = user.copyWith(profileImageBase64: base64Image);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  Future<bool> updatePersonalInfo({required String name, required String phone}) async {
+    final user = _currentUser;
+    if (user == null) return false;
+
+    try {
+      await _firestoreService.updateUserFields(user.uid, {'name': name, 'phone': phone});
+      _currentUser = user.copyWith(name: name, phone: phone);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  Future<bool> updateDefaultPaymentMethod(String method) async {
+    final user = _currentUser;
+    if (user == null) return false;
+
+    try {
+      await _firestoreService.updateUserFields(user.uid, {'defaultPaymentMethod': method});
+      _currentUser = user.copyWith(defaultPaymentMethod: method);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
     }
   }
 
