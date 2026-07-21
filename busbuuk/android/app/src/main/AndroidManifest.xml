@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- lets the profile screen take a photo for the base64 avatar -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="busbuuk"
         android:name="${applicationName}"
@@ -40,6 +42,12 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- lets url_launcher's canLaunchUrl find the dialer for tel: links,
+             e.g. "call the operator" on a ticket -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
         </intent>
     </queries>
 </manifest>
